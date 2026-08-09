@@ -6,6 +6,8 @@
 <title>Liga Reytingi</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
   :root{
     --pitch-dark:#0B2B1D;
@@ -400,24 +402,31 @@ let isAdmin = false;
 let teams = [];
 let news = [];
 
-// ---------- storage helpers (plain browser localStorage — works fully offline, no server needed) ----------
-async function loadTeams(){
-  try{
-    const raw = localStorage.getItem('futbol_teams');
-    teams = raw ? JSON.parse(raw) : [];
-  }catch(e){ teams = []; }
+// ---------- Firebase setup (shared, real-time database — everyone sees the same data live) ----------
+const firebaseConfig = {
+  apiKey: "AIzaSyBYuNUu9_3FmOdHcw7rTeXw-FP0InqloNs",
+  authDomain: "my-clubs-00.firebaseapp.com",
+  databaseURL: "https://my-clubs-00-default-rtdb.firebaseio.com",
+  projectId: "my-clubs-00",
+  storageBucket: "my-clubs-00.firebasestorage.app",
+  messagingSenderId: "1057092184363",
+  appId: "1:1057092184363:web:2f00a26282f3115e423d6e",
+  measurementId: "G-MK1727TFJB"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+async function writeTeam(team){
+  try{ await db.ref('teams/' + team.id).set(team); }catch(e){ console.error(e); }
 }
-async function saveTeams(){
-  try{ localStorage.setItem('futbol_teams', JSON.stringify(teams)); }catch(e){ console.error(e); }
+async function removeTeam(id){
+  try{ await db.ref('teams/' + id).remove(); }catch(e){ console.error(e); }
 }
-async function loadNews(){
-  try{
-    const raw = localStorage.getItem('futbol_news');
-    news = raw ? JSON.parse(raw) : [];
-  }catch(e){ news = []; }
+async function writeNewsItem(item){
+  try{ await db.ref('news/' + item.id).set(item); }catch(e){ console.error(e); }
 }
-async function saveNews(){
-  try{ localStorage.setItem('futbol_news', JSON.stringify(news)); }catch(e){ console.error(e); }
+async function removeNewsItem(id){
+  try{ await db.ref('news/' + id).remove(); }catch(e){ console.error(e); }
 }
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
@@ -588,15 +597,11 @@ function renderManageLists(){
 
 async function handleDelete(type, id){
   if(type==='team'){
-    teams = teams.filter(t=>t.id!==id);
-    await saveTeams();
-    renderRating();
+    await removeTeam(id);
   } else {
-    news = news.filter(n=>n.id!==id);
-    await saveNews();
-    renderNews();
+    await removeNewsItem(id);
   }
-  renderManageLists();
+  // UI updates automatically via the live Firebase listeners in init()
 }
 
 function tryLogin(){
@@ -617,10 +622,7 @@ async function addTeam(){
   const draws = parseInt(document.getElementById('teamDraws').value) || 0;
   const losses = parseInt(document.getElementById('teamLosses').value) || 0;
   const points = wins*3 + draws*1;
-  teams.push({ id: uid(), name, wins, draws, losses, points });
-  await saveTeams();
-  renderRating();
-  renderManageLists();
+  await writeTeam({ id: uid(), name, wins, draws, losses, points });
   nameEl.value=''; document.getElementById('teamWins').value=0;
   document.getElementById('teamDraws').value=0; document.getElementById('teamLosses').value=0;
 }
@@ -633,20 +635,30 @@ async function addNews(){
   if(!title || !text) return;
   const now = new Date();
   const date = now.toLocaleDateString('uz-UZ', { day:'2-digit', month:'long', year:'numeric' });
-  news.push({ id: uid(), title, text, date, createdAt: now.getTime() });
-  await saveNews();
-  renderNews();
-  renderManageLists();
+  await writeNewsItem({ id: uid(), title, text, date, createdAt: now.getTime() });
   titleEl.value=''; textEl.value='';
 }
 
 // ---------- init ----------
-(async function init(){
-  await Promise.all([loadTeams(), loadNews()]);
+function refreshAll(){
   renderRating();
   renderNews();
-  renderAdmin();
-})();
+  if(isAdmin) renderManageLists();
+}
+
+db.ref('teams').on('value', snap => {
+  const val = snap.val();
+  teams = val ? Object.keys(val).map(k => val[k]) : [];
+  refreshAll();
+});
+
+db.ref('news').on('value', snap => {
+  const val = snap.val();
+  news = val ? Object.keys(val).map(k => val[k]) : [];
+  refreshAll();
+});
+
+renderAdmin();
 </script>
 </body>
 </html>
